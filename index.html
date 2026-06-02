@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>30度斜坡力學實驗模擬器</title>
+    <style>
+        /* 黑底白字風格設計 */
+        body {
+            background-color: #000000;
+            color: #ffffff;
+            font-family: "Microsoft JhengHei", sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            text-align: center;
+            max-width: 900px;
+            width: 100%;
+        }
+
+        h2 {
+            margin-bottom: 5px;
+            letter-spacing: 2px;
+            font-size: 26px;
+        }
+
+        .subtitle {
+            color: #888888;
+            font-size: 16px;
+            margin-bottom: 25px;
+        }
+
+        /* 輸入控制區 */
+        .control-panel {
+            background-color: #111111;
+            border: 1px solid #333333;
+            padding: 15px 20px;
+            border-radius: 8px;
+            display: flex;
+            justify-content: center;
+            gap: 35px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 5px;
+        }
+
+        label {
+            font-size: 16px;
+            color: #aaaaaa;
+        }
+
+        input {
+            background-color: #222222;
+            border: 1px solid #555555;
+            color: #ffffff;
+            padding: 8px 12px;
+            font-size: 18px;
+            border-radius: 4px;
+            width: 140px;
+            text-align: center;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #ffffff;
+        }
+
+        /* 實驗動態狀態顯示區 */
+        .status-box {
+            background-color: #111111;
+            border: 1px solid #222222;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            line-height: 1.6;
+            text-align: left;
+            display: inline-block;
+            min-width: 500px;
+        }
+
+        .status-line {
+            margin-bottom: 5px;
+        }
+        .status-line:last-child {
+            margin-bottom: 0;
+        }
+
+        /* SVG 畫布 */
+        svg {
+            background-color: #050505;
+            border: 1px solid #222222;
+            border-radius: 8px;
+            box-shadow: 0 0 25px rgba(255, 255, 255, 0.04);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>斜坡上的拔河比賽演示</h2>
+    <div class="subtitle">第四版</div>
+
+    <div class="control-panel">
+        <div class="input-group">
+            <label for="weight">方塊重量 (gf)：</label>
+            <input type="number" id="weight" value="136" min="1" max="500" step="1">
+        </div>
+        <div class="input-group">
+            <label for="mu">靜摩擦係數 (μs)：</label>
+            <input type="number" id="mu" value="0.65" min="0" max="1.5" step="0.01">
+        </div>
+    </div>
+
+    <div class="status-box">
+        <div class="status-line" id="statusText">物體狀態：計算中...</div>
+        <div class="status-line" style="color: #ffff00;" id="pushUpText">➔ 克服最大靜摩擦力「往上拉動」需要多大的力：-- gf</div>
+        <div class="status-line" style="color: #ffff00;" id="pushDownText">➔ 克服最大靜摩擦力「往下拉動」需要多大的力：-- gf</div>
+    </div>
+
+    <svg id="simCanvas" width="850" height="620">
+        <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+                <path d="M 0 1 L 10 5 L 0 9 z" fill="#ffffff" />
+            </marker>
+        </defs>
+
+        <line x1="50" y1="480" x2="800" y2="480" stroke="#333333" stroke-width="1" />
+
+        <polygon points="100,460 700,460 700,113.59" fill="none" stroke="#ffffff" stroke-width="3" />
+        
+        <path d="M 160 460 A 60 60 0 0 0 151.96 430" fill="none" stroke="#666666" stroke-width="2" />
+        <text x="170" y="452" fill="#aaaaaa" font-size="16">30°</text>
+
+        <text id="labelDownStatic" x="150" y="80" fill="#ffff00" font-size="20" font-weight="bold" text-anchor="start">下滑力: -- gf</text>
+        
+        <text id="labelFricStatic" x="480" y="80" fill="#ffff00" font-size="20" font-weight="bold" text-anchor="start">最大靜摩擦力: -- gf</text>
+
+
+        <g id="forceSystem" transform="translate(400, 286.8) rotate(-30)">
+            
+            <rect x="-60" y="-60" width="120" height="60" fill="none" stroke="#ffffff" stroke-width="2.5" />
+            
+            <line id="arrowDown" x1="0" y1="-30" x2="-50" y2="-30" stroke="#ffffff" stroke-width="2.5" marker-end="url(#arrow)" />
+            
+            <line id="arrowFric" x1="0" y1="-30" x2="50" y2="-30" stroke="#ffffff" stroke-width="2.5" marker-end="url(#arrow)" />
+            
+            <line id="arrowNormal" x1="0" y1="-30" x2="0" y2="50" stroke="#ffffff" stroke-width="2.5" marker-end="url(#arrow)" />
+
+            <g id="labelNormalContainer">
+                <text id="labelNormal" fill="#ffff00" font-size="18" font-weight="bold" text-anchor="middle" y="25">正向力: -- gf</text>
+            </g>
+        </g>
+    </svg>
+</div>
+
+<script>
+    const weightInput = document.getElementById('weight');
+    const muInput = document.getElementById('mu');
+    
+    const arrowDown = document.getElementById('arrowDown');
+    const arrowFric = document.getElementById('arrowFric');
+    const arrowNormal = document.getElementById('arrowNormal');
+    
+    const labelNormalContainer = document.getElementById('labelNormalContainer');
+    
+    const labelDownStatic = document.getElementById('labelDownStatic');
+    const labelFricStatic = document.getElementById('labelFricStatic');
+    const labelNormal = document.getElementById('labelNormal');
+    
+    const statusText = document.getElementById('statusText');
+    const pushUpText = document.getElementById('pushUpText');
+    const pushDownText = document.getElementById('pushDownText');
+
+    function updateExperiment() {
+        let W = parseFloat(weightInput.value);
+        let mu = parseFloat(muInput.value);
+
+        if (isNaN(W) || W <= 0) W = 136;
+        if (isNaN(mu) || mu < 0) mu = 0;
+
+        const sin30 = 0.5;
+        const cos30 = 0.866025;
+
+        // 核心力學計算
+        const fDown = W * sin30;
+        const nForce = W * cos30;
+        const fFricMax = mu * nForce;
+
+        // 克服摩擦力所需的動態推力計算
+        const forceToMoveUp = fDown + fFricMax;
+        const forceToMoveDown = (fFricMax > fDown) ? (fFricMax - fDown) : 0;
+
+        // 畫面箭頭比例尺
+        const visualScale = 0.5; 
+        const lenDown = fDown * visualScale;
+        const lenNormal = nForce * visualScale;
+        const lenFric = fFricMax * visualScale;
+
+        // ---- 1. 更新箭頭終點 ----
+        arrowDown.setAttribute('x2', -lenDown);
+        arrowFric.setAttribute('x2', lenFric);
+        arrowNormal.setAttribute('y2', -30 + lenNormal);
+
+        // ---- 2. 更新正向力文字位置 (跟著箭頭長度動態往下移，維持不重疊) ----
+        labelNormalContainer.setAttribute('transform', `translate(0, ${-30 + lenNormal}) rotate(30)`);
+
+        // ---- 3. 填入數據 (下滑力與摩擦力更新至上方固定看板，字體加大至 20px) ----
+        labelDownStatic.textContent = `下滑力: ${fDown.toFixed(1)} gf`;
+        labelFricStatic.textContent = `最大靜摩擦力: ${fFricMax.toFixed(1)} gf`;
+        labelNormal.textContent = `正向力: ${nForce.toFixed(1)} gf`;
+
+        // ---- 4. 更新狀態判定與實驗數據提示 ----
+        if (fDown > fFricMax + 0.001) {
+            statusText.innerHTML = `當前狀態：<span style="color: #ff4a4a;">➔ 物體會自動往下滑動！</span> （下滑力 ＞ 最大靜摩擦力）`;
+            pushUpText.innerHTML = `➔ 若要將方塊「往上拉動」，必須施加超過 <span style="font-size: 22px;">${forceToMoveUp.toFixed(1)}</span> gf 的力`;
+            pushDownText.innerHTML = `➔ 若要將方塊「往下拉動」，必須施加超過 <span style="font-size: 22px;">0.0</span> gf 的力（它已經自己滑下去囉！）`;
+        } else {
+            statusText.innerHTML = `當前狀態：<span style="color: #4af74a;">● 物體保持靜止不動。</span> （最大靜摩擦力 ≧ 下滑力）`;
+            pushUpText.innerHTML = `➔ 若要將方塊「往上拉動」，必須施加超過 <span style="font-size: 22px;">${forceToMoveUp.toFixed(1)}</span> gf 的力`;
+            pushDownText.innerHTML = `➔ 若要將方塊「往下拉動」，只需施加超過 <span style="font-size: 22px;">${forceToMoveDown.toFixed(1)}</span> gf 的微小力量`;
+        }
+    }
+
+    weightInput.addEventListener('input', updateExperiment);
+    muInput.addEventListener('input', updateExperiment);
+    window.onload = updateExperiment;
+</script>
+
+</body>
+</html>
