@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>30度斜坡力學實驗模擬器</title>
+    <title>摩擦力實驗模擬器</title>
     <style>
         /* 黑底白字風格設計 */
         body {
@@ -69,7 +69,7 @@
             padding: 8px 12px;
             font-size: 18px;
             border-radius: 4px;
-            width: 140px;
+            width: 130px;
             text-align: center;
         }
 
@@ -90,7 +90,7 @@
             line-height: 1.6;
             text-align: left;
             display: inline-block;
-            min-width: 500px;
+            min-width: 520px;
         }
 
         .status-line {
@@ -112,13 +112,17 @@
 <body>
 
 <div class="container">
-    <h2>斜坡上的拔河比賽演示</h2>
-    <div class="subtitle">第四版</div>
+    <h2>摩擦力模擬器</h2>
+    <div class="subtitle">0~60 即時角度調整</div>
 
     <div class="control-panel">
         <div class="input-group">
             <label for="weight">方塊重量 (gf)：</label>
             <input type="number" id="weight" value="136" min="1" max="500" step="1">
+        </div>
+        <div class="input-group">
+            <label for="angle">斜坡角度 (度)：</label>
+            <input type="number" id="angle" value="30" min="0" max="60" step="1">
         </div>
         <div class="input-group">
             <label for="mu">靜摩擦係數 (μs)：</label>
@@ -141,15 +145,13 @@
 
         <line x1="50" y1="480" x2="800" y2="480" stroke="#333333" stroke-width="1" />
 
-        <polygon points="100,460 700,460 700,113.59" fill="none" stroke="#ffffff" stroke-width="3" />
+        <polygon id="rampPolygon" points="100,460 700,460 700,113.59" fill="none" stroke="#ffffff" stroke-width="3" />
         
-        <path d="M 160 460 A 60 60 0 0 0 151.96 430" fill="none" stroke="#666666" stroke-width="2" />
-        <text x="170" y="452" fill="#aaaaaa" font-size="16">30°</text>
+        <path id="angleArc" d="M 160 460 A 60 60 0 0 0 151.96 430" fill="none" stroke="#666666" stroke-width="2" />
+        <text id="angleText" x="170" y="452" fill="#aaaaaa" font-size="16">30°</text>
 
         <text id="labelDownStatic" x="150" y="80" fill="#ffff00" font-size="20" font-weight="bold" text-anchor="start">下滑力: -- gf</text>
-        
         <text id="labelFricStatic" x="480" y="80" fill="#ffff00" font-size="20" font-weight="bold" text-anchor="start">最大靜摩擦力: -- gf</text>
-
 
         <g id="forceSystem" transform="translate(400, 286.8) rotate(-30)">
             
@@ -170,7 +172,13 @@
 
 <script>
     const weightInput = document.getElementById('weight');
+    const angleInput = document.getElementById('angle');
     const muInput = document.getElementById('mu');
+    
+    const rampPolygon = document.getElementById('rampPolygon');
+    const angleArc = document.getElementById('angleArc');
+    const angleText = document.getElementById('angleText');
+    const forceSystem = document.getElementById('forceSystem');
     
     const arrowDown = document.getElementById('arrowDown');
     const arrowFric = document.getElementById('arrowFric');
@@ -188,43 +196,82 @@
 
     function updateExperiment() {
         let W = parseFloat(weightInput.value);
+        let deg = parseFloat(angleInput.value);
         let mu = parseFloat(muInput.value);
 
+        // 輸入限制防呆
         if (isNaN(W) || W <= 0) W = 136;
+        if (isNaN(deg) || deg < 0) deg = 0;
+        if (deg > 60) { deg = 60; angleInput.value = 60; } // 防止坡道太陡拉太高
         if (isNaN(mu) || mu < 0) mu = 0;
 
-        const sin30 = 0.5;
-        const cos30 = 0.866025;
+        // 弧度轉換與三角函數
+        const rad = deg * Math.PI / 180;
+        const sinTheta = Math.sin(rad);
+        const cosTheta = Math.cos(rad);
 
-        // 核心力學計算
-        const fDown = W * sin30;
-        const nForce = W * cos30;
+        // ---- 1. 動態更新斜坡三角形幾何構造 ----
+        const xLeft = 100;
+        const xRight = 700;
+        const yBottom = 460;
+        const rampLength = xRight - xLeft; // 600px
+        const yTop = yBottom - (rampLength * Math.tan(rad));
+        
+        // 更新三角形頂點
+        rampPolygon.setAttribute('points', `${xLeft},${yBottom} ${xRight},${yBottom} ${xRight},${yTop}`);
+        
+        // 更新角度標示弧線 (Arc)
+        if (deg > 0) {
+            const arcRadius = 60;
+            const arcX = xLeft + arcRadius * cosTheta;
+            const arcY = yBottom - arcRadius * sinTheta;
+            angleArc.setAttribute('d', `M ${xLeft + arcRadius} ${yBottom} A ${arcRadius} ${arcRadius} 0 0 0 ${arcX} ${arcY}`);
+            angleArc.setAttribute('stroke', '#666666');
+            angleText.setAttribute('x', xLeft + arcRadius + 10);
+            angleText.setAttribute('y', yBottom - 8);
+            angleText.textContent = `${deg}°`;
+        } else {
+            angleArc.setAttribute('d', ''); // 0度時隱藏弧線
+            angleText.textContent = '0°';
+            angleText.setAttribute('x', xLeft + 70);
+            angleText.setAttribute('y', yBottom - 8);
+        }
+
+        // ---- 2. 動態更新方塊的位置與傾斜度 ----
+        // 將方塊擺在斜邊的正中心
+        const centerX = (xLeft + xRight) / 2; // 固定為 400
+        const centerY = (yBottom + yTop) / 2; // 隨著角度變陡而往上移
+        forceSystem.setAttribute('transform', `translate(${centerX}, ${centerY}) rotate(${-deg})`);
+
+        // ---- 3. 核心物理力學計算 ----
+        const fDown = W * sinTheta;
+        const nForce = W * cosTheta;
         const fFricMax = mu * nForce;
 
-        // 克服摩擦力所需的動態推力計算
+        // 克服摩擦力所需推力
         const forceToMoveUp = fDown + fFricMax;
         const forceToMoveDown = (fFricMax > fDown) ? (fFricMax - fDown) : 0;
 
-        // 畫面箭頭比例尺
+        // 箭頭比例尺
         const visualScale = 0.5; 
         const lenDown = fDown * visualScale;
         const lenNormal = nForce * visualScale;
         const lenFric = fFricMax * visualScale;
 
-        // ---- 1. 更新箭頭終點 ----
+        // ---- 4. 更新箭頭終點 ----
         arrowDown.setAttribute('x2', -lenDown);
         arrowFric.setAttribute('x2', lenFric);
         arrowNormal.setAttribute('y2', -30 + lenNormal);
 
-        // ---- 2. 更新正向力文字位置 (跟著箭頭長度動態往下移，維持不重疊) ----
-        labelNormalContainer.setAttribute('transform', `translate(0, ${-30 + lenNormal}) rotate(30)`);
+        // ---- 5. 更新正向力文字位置 (保持與箭頭終點的安全距離，並反向旋轉以利點對點對齊) ----
+        labelNormalContainer.setAttribute('transform', `translate(0, ${-30 + lenNormal}) rotate(${deg})`);
 
-        // ---- 3. 填入數據 (下滑力與摩擦力更新至上方固定看板，字體加大至 20px) ----
+        // ---- 6. 填入數據至對應看版 ----
         labelDownStatic.textContent = `下滑力: ${fDown.toFixed(1)} gf`;
         labelFricStatic.textContent = `最大靜摩擦力: ${fFricMax.toFixed(1)} gf`;
         labelNormal.textContent = `正向力: ${nForce.toFixed(1)} gf`;
 
-        // ---- 4. 更新狀態判定與實驗數據提示 ----
+        // ---- 7. 更新狀態判定與推力提示語 ----
         if (fDown > fFricMax + 0.001) {
             statusText.innerHTML = `當前狀態：<span style="color: #ff4a4a;">➔ 物體會自動往下滑動！</span> （下滑力 ＞ 最大靜摩擦力）`;
             pushUpText.innerHTML = `➔ 若要將方塊「往上拉動」，必須施加超過 <span style="font-size: 22px;">${forceToMoveUp.toFixed(1)}</span> gf 的力`;
@@ -232,11 +279,12 @@
         } else {
             statusText.innerHTML = `當前狀態：<span style="color: #4af74a;">● 物體保持靜止不動。</span> （最大靜摩擦力 ≧ 下滑力）`;
             pushUpText.innerHTML = `➔ 若要將方塊「往上拉動」，必須施加超過 <span style="font-size: 22px;">${forceToMoveUp.toFixed(1)}</span> gf 的力`;
-            pushDownText.innerHTML = `➔ 若要將方塊「往下拉動」，只需施加超過 <span style="font-size: 22px;">${forceToMoveDown.toFixed(1)}</span> gf 的微小力量`;
+            pushDownText.innerHTML = `➔ 若要將方塊「往下拉動」，只需施加超過 <span style="font-size: 22px;">${forceToMoveDown.toFixed(1)}</span> gf 的力量`;
         }
     }
 
     weightInput.addEventListener('input', updateExperiment);
+    angleInput.addEventListener('input', updateExperiment);
     muInput.addEventListener('input', updateExperiment);
     window.onload = updateExperiment;
 </script>
