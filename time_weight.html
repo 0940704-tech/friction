@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>重量隨時間變化曲線圖</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 20px;
+            background-color: #f4f6f9;
+            color: #333;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        h2 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #7f8c8d;
+            font-size: 14px;
+            margin-bottom: 25px;
+        }
+        .upload-area {
+            border: 2px dashed #2ecc71;
+            padding: 25px;
+            text-align: center;
+            border-radius: 6px;
+            background: #f9fbf9;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 20px;
+        }
+        .upload-area:hover {
+            background: #f1f9f3;
+            border-color: #27ae60;
+        }
+        #fileInput {
+            display: none;
+        }
+        .upload-icon {
+            font-size: 40px;
+            color: #2ecc71;
+            margin-bottom: 10px;
+        }
+        /* 最大值資訊看板 */
+        .max-info-box {
+            display: none; /* 有數據時才顯示 */
+            background-color: #fdf2f2;
+            border-left: 5px solid #e74c3c;
+            padding: 12px 20px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: bold;
+            color: #c0392b;
+        }
+        .chart-container {
+            position: relative;
+            height: 500px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>重量隨時間變化觀測儀</h2>
+    <div class="subtitle">自動分析數據並精準標示最大重量頂點</div>
+    
+    <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+        <div class="upload-icon">📊</div>
+        <p>點擊此處或拖曳 <b>CSV 檔案</b> 至此上傳</p>
+        <input type="file" id="fileInput" accept=".csv">
+    </div>
+
+    <div id="maxInfoBox" class="max-info-box"></div>
+
+    <div class="chart-container">
+        <canvas id="weightChart"></canvas>
+    </div>
+</div>
+
+<script>
+    let myChart = null;
+
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        
+        reader.onload = function(e) {
+            const text = e.target.result;
+            // 依行切 split，並過濾掉完全空白的行
+            const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+            
+            if (lines.length === 0) {
+                alert("CSV 檔案內容為空！");
+                return;
+            }
+
+            let times = [];
+            let weights = [];
+            
+            // 判斷第一行是否為標題列
+            let firstLineCells = lines[0].split(',');
+            let startRow = 0;
+            if (isNaN(Number(firstLineCells[0])) || isNaN(Number(firstLineCells[1]))) {
+                startRow = 1; // 第一行是標題，從第二行開始讀取數據
+            }
+
+            // 解析 CSV 數據
+            for (let i = startRow; i < lines.length; i++) {
+                const cells = lines[i].split(',');
+                if (cells.length >= 2) {
+                    const timeValue = Number(cells[0].trim());
+                    const weightValue = Number(cells[1].trim());
+                    
+                    // 確保欄位都是有效數字才塞入陣列
+                    if (!isNaN(timeValue) && !isNaN(weightValue)) {
+                        times.push(timeValue);
+                        weights.push(weightValue);
+                    }
+                }
+            }
+
+            if (times.length === 0) {
+                alert("未能從 CSV 中解析出有效的數字數據，請檢查 A 欄(時間)與 B 欄(重量)。");
+                return;
+            }
+
+            // 尋找最大重量值及其索引位置
+            let maxWeight = -Infinity;
+            let maxIndex = -1;
+            for (let i = 0; i < weights.length; i++) {
+                if (weights[i] > maxWeight) {
+                    maxWeight = weights[i];
+                    maxIndex = i;
+                }
+            }
+            const maxTime = times[maxIndex];
+
+            // 顯示上方摘要看板
+            const infoBox = document.getElementById('maxInfoBox');
+            infoBox.innerHTML = `最大靜摩擦力：<span style="font-size:20px;">${maxWeight}</span> g ( 發生時間：${maxTime} ms )`;
+            infoBox.style.display = 'block';
+
+            // 繪製圖表
+            renderChart(times, weights, maxIndex);
+        };
+
+        // 以文字格式讀取 CSV
+        reader.readAsText(file);
+    });
+
+    function renderChart(xData, yData, maxIndex) {
+        const ctx = document.getElementById('weightChart').getContext('2d');
+        
+        if (myChart) {
+            myChart.destroy();
+        }
+
+        // 動態建立每個點的樣式陣列
+        // 預設情況下：點的大小為 0 (隱藏點以維持大數據流暢)，顏色為主題藍
+        // 只有最大值的那個點：特別調大、變成醒目的紅色
+        let pointRadiuses = new Array(xData.length).fill(xData.length > 150 ? 0 : 2); 
+        let pointColors = new Array(xData.length).fill('#3498db');
+        
+        // 單獨設定最大值節點的突顯樣式
+        pointRadiuses[maxIndex] = 7;      // 讓最大值的圓點變大
+        pointColors[maxIndex] = '#e74c3c'; // 讓最大值的圓點變成紅色
+
+        myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: xData,
+                datasets: [{
+                    label: '重量變化曲線 (g)',
+                    data: yData,
+                    borderColor: '#3498db',
+                    backgroundColor: 'rgba(52, 152, 219, 0.05)',
+                    borderWidth: 2,
+                    tension: 0.1,
+                    fill: true,
+                    // 套用剛才動態產生的個別節點樣式
+                    pointRadius: pointRadiuses,
+                    pointBackgroundColor: pointColors,
+                    pointBorderColor: pointColors,
+                    pointHoverRadius: 9
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top' },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            title: function(context) {
+                                return `時間: ${context[0].label} ms`;
+                            },
+                            label: function(context) {
+                                let label = `重量: ${context.raw} g`;
+                                // 如果滑鼠移到最大值那個點，提示框內特別備註
+                                if (context.dataIndex === maxIndex) {
+                                    label += ' 👑 [最大值]';
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        title: { display: true, text: '時間 (ms)', font: { size: 14, weight: 'bold' } }
+                    },
+                    y: {
+                        title: { display: true, text: '重量 (g)', font: { size: 14, weight: 'bold' } },
+                        grid: { color: '#eaeded' }
+                    }
+                }
+            }
+        });
+    }
+</script>
+
+</body>
+</html>
